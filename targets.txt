@@ -1,0 +1,3 @@
+# tab separated file.
+Coords	Target Name	Comments
+02:19:20.79210 −02:58:39.4956	Mira	Mira A and B are aligned along the East-West axis. Use a slit with 90 degree position angle
