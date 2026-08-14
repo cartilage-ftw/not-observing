@@ -2,16 +2,52 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from astroquery.xmatch import XMatch
 from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
 from astroquery.hips2fits import hips2fits
 from matplotlib.patches import Rectangle
+from astropy.table import Table
+from dustmaps.sfd import SFDQuery
+#from dustmaps.config import config
+
+#config.reset() # to create ~/.dustmapsrc config file.
+
 
 def load_targets(path='./targets.txt'):
     return pd.read_csv(path, header=1, sep='\t')
 
 def load_list_terese(path):
     return pd.read_csv(path, sep='\t')
+
+def fetch_photometry(ra_list, dec_list):
+    coords_df = Table({"ra": ra_list, "dec":dec_list})
+    result = XMatch.query(
+        cat1=coords_df,
+        cat2="vizier:II/336/apass9",
+        max_distance=2.0 * u.arcsec,
+        colRA1="ra",
+        colDec1="dec",
+    )
+    return result.to_pandas()
+
+def get_dust_extinction(phot_data):
+    sfd = SFDQuery()
+
+    coords = SkyCoord(
+    ra=phot_data["ra"].values * u.deg,
+    dec=phot_data["dec"].values * u.deg,
+    frame="icrs",
+    )
+    ebv_sfd = sfd(coords)
+
+    # Extinction estimates
+    A_V = 2.742 * ebv_sfd
+    A_B = 3.626 * ebv_sfd
+
+    # Dereddened magnitudes
+    B_0 = phot_data["Bmag"] - A_B
+    V_0 = phot_data["Vmag"] - A_V
 
 def make_fast_not_chart(
     coord=None,
@@ -28,8 +64,6 @@ def make_fast_not_chart(
     if coord is None:
         coord = SkyCoord.from_name(target_name)
         title_name = target_name
-        #else:
-        #coord = target_name_
     else:
         title_name = f"RA {coord.ra.deg:.4f}, Dec {coord.dec.deg:.4f}"
     if target_name == None:
@@ -109,16 +143,27 @@ def make_fast_not_chart(
     print(f"Saved chart to {output_file}")
 
 if __name__ == "__main__":
+
+    # the weird tab-separated format I use
     targets = load_targets('targets.txt')
     for i in range(len(targets)):
-        #print(targets.iloc[i].values)
         coords, target_name, comments = targets.iloc[i].values
         make_fast_not_chart(SkyCoord(coords, unit=(u.hourangle, u.deg)), target_name, comments=comments)
+        coord = SkyCoord(coords, unit=(u.hourangle, u.deg))
+    # the target lists that Terese gave us.
     for rpa_list in ['RPA_targets.tab', 'RPA_Bright_targets.tab']:
         targets = load_list_terese(rpa_list)
+
+        # try to fetch photometry
+        coords = SkyCoord(targets['RA'], targets['DEC'], unit=(u.hourangle, u.deg))
+        phot_data = fetch_photometry(coords.ra.deg, coords.dec.deg)
+        print(phot_data.head())
+
+        #get_dust_extinction(phot_data)
+
         for i in range(len(targets)):
             target_id, ra, dec, v_mag, fe_h = targets.iloc[i].values
+            coord = SkyCoord(ra, dec, unit=(u.hourangle, u.deg))
             comments = f'[Fe/H]={fe_h}, V={v_mag}'
-            make_fast_not_chart(SkyCoord(" ".join([ra, dec]), unit=(u.hourangle, u.deg)),
+            make_fast_not_chart(SkyCoord(" ".join([ra, dec]),unit=(u.hourangle, u.deg)),
                                          target_id, comments=comments)
-    #make_fast_not_chart("M51", fov_arcmin=12.0, hips_survey='CDS/P/DSS2/red', output_file='M51.png')
